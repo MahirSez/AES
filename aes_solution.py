@@ -399,7 +399,7 @@ def main():
     #     f.write(bytes(deciphered_text, 'latin-1'))
 
     print("\n\n---------------------Execution Status--------------------\n\n")
-    print("File Encryption Decryption status: ", filecmp.cmp(INPUT_FILE, OUTPUT_FILE))
+    # print("File Encryption Decryption status: ", filecmp.cmp(INPUT_FILE, OUTPUT_FILE))
     print("Key:")
     print(key, "[IN ASCII]")
     print(key.encode("latin-1").hex(), "[In HEX]\n")
