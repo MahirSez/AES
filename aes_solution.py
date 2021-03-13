@@ -4,19 +4,18 @@ import time
 from collections import deque
 from BitVector import *
 
-BITS = 128  # AES-version
-N = 4  # Matrix dimension
-KEY_CHARS = BITS // 8  # Number of characters in a key
-KEY_LEN = BITS // 32  # Length of the key in 32-bit words
+BITS = 128              # AES-version
+ROW = 4                 # Matrix row
+COL = BITS // 32        # Matrix column
+KEY_CHARS = BITS // 8   # Number of characters in a key
+KEY_LEN = BITS // 32    # Length of the key in 32-bit words
 
-TEXT_CHARS = 16  # Number of characters in plain text
+TEXT_CHARS = BITS // 8  # Number of characters in plain text
 ROUND = BITS // 32 + 7  # Total rounds in AES
 AES_modulus = BitVector(bitstring='100011011')  # 0x11B
 
-INPUT_FILE = "teddy.jpeg"
+INPUT_FILE = "compress_me.txt"
 OUTPUT_FILE = "out"
-
-# BONUS_TEXT = "182e0afe67094cb70f2a7dc74f7e0076552456c820d6029f9519a7f8a020a6dc6707ec0f7e1eb439f3ea0db53ee60c958d67693151bba8ec61dacbd83e99c6ef9daa26069685e2284ba264a9b7ad9a56d6203cc8ab315c34de944af524b12d6585ccfb0c6fab4b7006266d66280ad44ea44dbe21d269f3e030129f49851711a6dd7b9f55dfd4c5dcee355973fc2ce6486d7df8de352e73d434ee9932477226e42012d10b974dfa66366f9830b0fb62e69dfde63105ae1d2eccb316e4f57ceb55eef9677d5dc267f8ece3d2fa30d2c06c"
 
 Sbox = [0] * 256
 InvSbox = [0] * 256
@@ -40,56 +39,66 @@ InvMixer = [
 ]
 
 
-# Matrix class to perform operations on 4x4 BiVector matrix
+# Matrix class to perform operations on BitVector matrix
 class Matrix:
-    matrix = [[BitVector(hexstring="")] * N for _ in range(N)]
+    matrix = [[BitVector(hexstring="")] * COL for _ in range(ROW)]
 
+    # constructor takes blocks of input plain text and constructs matrix in column major order
     def __init__(self, text):
-        for j in range(N):
-            for i in range(N):
-                self.matrix[i][j] = BitVector(textstring=text[j * N + i])
+        for j in range(COL):
+            for i in range(ROW):
+                self.matrix[i][j] = BitVector(textstring=text[j * ROW + i])
 
+    # prints matrix in hex
     def print(self):
-        for i in range(N):
-            for j in range(N):
+        for i in range(ROW):
+            for j in range(COL):
                 print(self.matrix[i][j].getHexStringFromBitVector(), end=' ')
             print()
         print()
 
+    # adds round key by performing xor operation
     def add_round_key(self, round_key):
         cnt = 0
-        for j in range(N):
-            for i in range(N):
+        for j in range(COL):
+            for i in range(ROW):
                 self.matrix[i][j] ^= round_key[cnt:cnt + 8]
                 cnt += 8
 
+    # substitutes matrix elements with Sbox elements if encryption_mode is True,
+    # otherwise replaces with InvSbox
     def substitute_bytes(self, encryption_mode):
-        for i in range(N):
-            for j in range(N):
+        for i in range(ROW):
+            for j in range(COL):
                 int_val = self.matrix[i][j].intValue()
                 int_val = Sbox[int_val] if encryption_mode is True else InvSbox[int_val]
                 self.matrix[i][j] = BitVector(intVal=int_val, size=8)
 
+    # shifts matrix according to AES algorithm
+    # cyclic left shift for encryption
+    # cyclic right shift for decryption
     def shift_rows(self, encryption_mode):
-        for i in range(N):
+        for i in range(ROW):
             items = deque(self.matrix[i])
             items.rotate(i * (-1 if encryption_mode is True else 1))
-            for j in range(N):
+            for j in range(COL):
                 self.matrix[i][j] = items[j]
 
+    # Performs matrix multiplication in finite field
     def mix_columns(self, encryption_mode):
-        new_mat = [[BitVector(intVal=0, size=8)] * N for _ in range(N)]
+        new_mat = [[BitVector(intVal=0, size=8)] * COL for _ in range(ROW)]
         mixer = Mixer if encryption_mode is True else InvMixer
-        for i in range(N):
-            for j in range(N):
-                for k in range(N):
+        for i in range(ROW):
+            for j in range(COL):
+                for k in range(ROW):
                     new_mat[i][j] ^= mixer[i][k].gf_multiply_modular(self.matrix[k][j], AES_modulus, 8)
         self.matrix = new_mat
 
+    # returns the hex form of the matrix in column major order
     def get_hex_form(self):
         ret_text = ""
-        for j in range(N):
-            for i in range(N):
+        for j in range(COL):
+            for i in range(ROW):
                 ret_text += self.matrix[i][j].getHexStringFromBitVector()
         return ret_text
 
@@ -114,7 +123,7 @@ str
 def process_plain_text(text):
     global space_padding
     len_now = len(text)
-    new_len = ((len_now - 1) // TEXT_CHARS + 1) * TEXT_CHARS  # taking ceil( text_len / TEXT_LEN )
+    new_len = ((len_now - 1) // TEXT_CHARS + 1) * TEXT_CHARS  # making text_len multiple of TEXT_CHARS by taking ceiling
     text = text.ljust(new_len)  # padding with spaces
     space_padding = new_len - len_now
     return text
@@ -201,7 +210,7 @@ Link: https://en.wikipedia.org/wiki/AES_key_schedule
 Parameter
 -----------
 key : str
-    Encryption & decryption key
+    Encryption & decryption key of length KEY_LEN
     
 Returns
 --------
@@ -211,7 +220,6 @@ list
 
 
 def generate_round_keys(key):
-    key = key.ljust(KEY_CHARS)[:KEY_CHARS]  # making length of key to KEY_LEN
     init_key = BitVector(textstring=key)
     word_keys = []
 
@@ -249,9 +257,9 @@ A 4x4 BitVector array
 
 def bitvector_to_matrix(bit_vec):
     bits_per_entry = len(bit_vec) // 16
-    mat = [[BitVector(hexstring="") for _ in range(N)] for _ in range(N)]
-    for j in range(N):
-        for i in range(N):
+    mat = [[BitVector(hexstring="") for _ in range(ROW)] for _ in range(ROW)]
+    for j in range(ROW):
+        for i in range(ROW):
             mat[i][j] = bit_vec[:bits_per_entry]
             bit_vec = bit_vec[bits_per_entry:]
     return mat
@@ -271,8 +279,8 @@ Resulting matrix after adding round key
 
 
 def add_round_key(mat, round_mat):
-    for i in range(N):
-        for j in range(N):
+    for i in range(ROW):
+        for j in range(ROW):
             mat[i][j] ^= round_mat[i][j]
     return mat
 
@@ -283,14 +291,14 @@ Decrypts cipher text with round_keys
 Parameter
 ------------
 text: str
-    hex string whose length is a multiple of 32
+    ciphered string in hex string
 round_keys: list of BitVector 
     round keys for all rounds
 
 Returns
 ---------
 str
-    Deciphered text in ascii 
+    Deciphered plain text 
 """
 
 
@@ -298,14 +306,13 @@ def decrypt(text, round_keys):
     deciphered_text = ""
     text = bytes.fromhex(text).decode('latin-1')
 
-    turn = len(text) // TEXT_CHARS
+    turn = len(text) // TEXT_CHARS  # Number of chunks to decipher at a time
     for i in range(turn):
         if i % 10 == 0:
             print("Decrypting block: ", i + 1)
         matrix = Matrix(text[i * TEXT_CHARS:(i + 1) * TEXT_CHARS])
         for j in range(ROUND - 1, 0, -1):
             matrix.add_round_key(round_keys[j])
-
             if j != ROUND - 1:
                 matrix.mix_columns(encryption_mode=False)
             matrix.shift_rows(encryption_mode=False)
@@ -314,24 +321,25 @@ def decrypt(text, round_keys):
         matrix.add_round_key(round_keys[0])
         deciphered_text += matrix.get_hex_form()
     deciphered_text = bytes.fromhex(deciphered_text).decode('latin-1')
-    deciphered_text = deciphered_text[:len(deciphered_text) - space_padding]
+    deciphered_text = deciphered_text[:len(deciphered_text) - space_padding]    # trimming extra paddings
     return deciphered_text
 
 
 """
 Encrypts input plain text with round_keys
+Link: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 
 Parameter
 ------------
 text: str
     Input text whose length is a multiple of TEXT_CHARS
-round_keys: list of BitVector 
+round_keys: BitVector[] 
     round keys for all rounds
 
 Returns
 ---------
 str
-    Ciphered text in hex 
+    ciphered text in hex 
 """
 
 
@@ -341,10 +349,10 @@ def encrypt(text, round_keys):
     print("Total input block(s):", turn)
     print("--------------------------")
 
-    for i in range(turn):  # process 128 bits at a time
+    for i in range(turn):  # process 128 bits at a time (AES-128)
         if i % 10 == 0:  # For debugging
             print("Encrypting block: ", i + 1)
-        matrix = Matrix(text[i * TEXT_CHARS:(i + 1) * TEXT_CHARS])  # create 4x4 matrix
+        matrix = Matrix(text[i * TEXT_CHARS:(i + 1) * TEXT_CHARS])  # create 4x4 matrix (AES-128)
         matrix.add_round_key(round_keys[0])
 
         for j in range(1, ROUND):
@@ -362,7 +370,8 @@ def main():
     generate_matrices()  # pre-calculations
     start_time = time.time()
 
-    key = "Thats my Kung Fu"
+    key = "BUET CSE16 Batch"
+    key = key.ljust(KEY_CHARS, '0')[:KEY_CHARS]  # making length of key to KEY_CHARS
 
     # Round key generation
     round_keys = generate_round_keys(key)
@@ -370,27 +379,27 @@ def main():
     start_time = time.time()
 
     # Text Encryption
-    text = "We Will Graduate Soon"
+    text = "WillGraduateSoon"
 
-    # File Encryption
+    # for file Encryption
     # with open(INPUT_FILE, 'rb') as f:
     #     text = bytes.hex(f.read())
     # text = bytes.fromhex(text).decode('latin-1')
 
     text = process_plain_text(text)  # input padding
-    cipher_text = encrypt(text, round_keys)  # encryption
+    ciphered_text = encrypt(text, round_keys)  # encryption
     encryption_time = time.time() - start_time
     start_time = time.time()
 
-    deciphered_text = decrypt(cipher_text, round_keys)  # decryption
+    deciphered_text = decrypt(ciphered_text, round_keys)  # decryption
     decryption_time = time.time() - start_time
 
-    # For File decryption
+    # for file decryption
     # with open(OUTPUT_FILE, 'wb') as f:
     #     f.write(bytes(deciphered_text, 'latin-1'))
 
     print("\n\n---------------------Execution Status--------------------\n\n")
-    # print("File Encryption Decryption status: ", filecmp.cmp(INPUT_FILE, OUTPUT_FILE))
+    print("File Encryption Decryption status: ", filecmp.cmp(INPUT_FILE, OUTPUT_FILE))
     print("Key:")
     print(key, "[IN ASCII]")
     print(key.encode("latin-1").hex(), "[In HEX]\n")
@@ -400,8 +409,8 @@ def main():
     print(text.encode("latin-1").hex(), "[In HEX]\n")
 
     print("Cipher Text:")
-    print(cipher_text, "[In HEX]")
-    print(bytes.fromhex(cipher_text).decode('latin-1'), "[In ASCII]\n")
+    print(ciphered_text, "[In HEX]")
+    print(bytes.fromhex(ciphered_text).decode('latin-1'), "[In ASCII]\n")
 
     print("Deciphered Text:")
     print(deciphered_text.encode("latin-1").hex(), "[In HEX]")
