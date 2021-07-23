@@ -1,10 +1,8 @@
-import binascii
-import filecmp
 import time
 from collections import deque
 from BitVector import *
 
-BITS = 256              # AES-version
+BITS = 128              # AES-version
 ROW = 4                 # Matrix row
 COL = BITS // 32        # Matrix column
 KEY_CHARS = BITS // 8   # Number of characters in a key
